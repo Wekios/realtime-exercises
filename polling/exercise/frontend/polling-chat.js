@@ -1,32 +1,58 @@
 const chat = document.getElementById("chat");
 const msgs = document.getElementById("msgs");
 
-// let's store all current messages here
+/** All current messages */
 let allChat = [];
 
-// the interval to poll at in milliseconds
+/** the interval to poll at in milliseconds */
 const INTERVAL = 3000;
+
+const BACK_OFF = 5000;
+let timeToMakeNextRequest = 0;
+let failedTries;
 
 // a submit listener on the form in the HTML
 chat.addEventListener("submit", function (e) {
   e.preventDefault();
-  postNewMsg(chat.elements.user.value, chat.elements.text.value);
+  postNewMessages(chat.elements.user.value, chat.elements.text.value);
   chat.elements.text.value = "";
 });
 
-async function postNewMsg(user, text) {
-  // post to /poll a new message
-  // write code here
+async function postNewMessages(user, text) {
+  const data = {
+    user,
+    text,
+  };
+
+  await fetch("/poll", {
+    method: "POST",
+    body: JSON.stringify(data),
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
-async function getNewMsgs() {
-  // poll the server
-  // write code here
+async function getNewMessages() {
+  let json;
+  try {
+    const res = await fetch("/poll");
+    json = await res.json();
+
+    if (res.status >= 400) {
+      throw new Error("Request did not succeed:", res.status);
+    }
+
+    allChat = json.messages;
+    render();
+    failedTries = 0;
+  } catch (error) {
+    console.error(error);
+    failedTries++;
+  }
 }
 
 function render() {
   // as long as allChat is holding all current messages, this will render them
-  // into the ui. yes, it's inefficent. yes, it's fine for this example
+  // into the ui. yes, it's inefficient. yes, it's fine for this example
   const html = allChat.map(({ user, text, time, id }) =>
     template(user, text, time, id)
   );
@@ -37,5 +63,13 @@ function render() {
 const template = (user, msg) =>
   `<li class="collection-item"><span class="badge">${user}</span>${msg}</li>`;
 
-// make the first request
-getNewMsgs();
+async function poll(time) {
+  if (timeToMakeNextRequest <= time) {
+    await getNewMessages();
+    timeToMakeNextRequest = time + INTERVAL + failedTries * BACK_OFF;
+  }
+
+  requestAnimationFrame(poll);
+}
+
+requestAnimationFrame(poll);
